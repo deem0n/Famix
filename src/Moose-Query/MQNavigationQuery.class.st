@@ -36,7 +36,8 @@ Class {
 		'directionStrategy',
 		'resultKindStrategy',
 		'associationSelectionStrategy',
-		'shouldCollectChildrenDependencies'
+		'shouldCollectChildrenDependencies',
+		'visitedEntities'
 	],
 	#category : 'Moose-Query-Navigating',
 	#package : 'Moose-Query',
@@ -100,12 +101,14 @@ MQNavigationQuery >> execute [
 
 { #category : 'execution' }
 MQNavigationQuery >> executeHasQuery [
+	visitedEntities := IdentitySet new.
 	^ self hasFor: receiver
 ]
 
 { #category : 'execution' }
 MQNavigationQuery >> executeQueryForQueryResult: aQueryResultClass [
 	result := aQueryResultClass on: receiver.
+	visitedEntities := IdentitySet new.
 
 	self queryFor: receiver.
 
@@ -119,16 +122,12 @@ MQNavigationQuery >> has [
 
 { #category : 'execution' }
 MQNavigationQuery >> hasFor: anEntity [
-	"I know that we could use #do: here, but this algo takes too long on big model, so this is a speed up while the sista vm is not ready for production"
-
-	| selectors |
+	(visitedEntities includes: anEntity) ifTrue: [ ^ false ].
+	visitedEntities add: anEntity.
 	(self hasLocalFor: anEntity) ifTrue: [ ^ true ].
-
-	shouldCollectChildrenDependencies ifFalse: [ ^ false ]. "Instead of #to:do: we could just use #do: but this implementation is much faster. Maybe sista will remove the needs of the todo later."
-	1 to: (selectors := anEntity containedEntitySelectors) size do: [ :index |
-			(anEntity perform: (selectors at: index)) ifNotNil: [ :children |
-					| coll |
-					1 to: (coll := children asCollection) size do: [ :i | (self hasFor: (coll at: i)) ifTrue: [ ^ true ] ] ] ].
+	shouldCollectChildrenDependencies ifFalse: [ ^ false ].
+	anEntity containedEntitiesDo: [ :child |
+		(self hasFor: child) ifTrue: [ ^ true ] ].
 	^ false
 ]
 
@@ -155,6 +154,7 @@ MQNavigationQuery >> incoming [
 MQNavigationQuery >> initialize [
 	super initialize.
 	resultKindStrategy := MQNavigationAssociationKindStrategy.
+	visitedEntities := IdentitySet new.
 	shouldCollectChildrenDependencies := true
 ]
 
@@ -175,20 +175,11 @@ MQNavigationQuery >> outgoing [
 
 { #category : 'execution' }
 MQNavigationQuery >> queryFor: anEntity [
-	"collects in aCollection all entities on the opposite side of associations with self
-	 Opposite side depends on self strategy (incoming/outgoing)
-	
-	First collects entities from local (not inherited) properties
-	Then get children entities of self and applies recurvively on them"
-
-	| selectors |
+	(visitedEntities includes: anEntity) ifTrue: [ ^ self ].
+	visitedEntities add: anEntity.
 	self queryLocalFor: anEntity.
-
-	shouldCollectChildrenDependencies ifFalse: [ ^ self ]. "Instead of #to:do: we could just use #do: but this implementation is much faster. Maybe sista will remove the needs of the todo later."
-	1 to: (selectors := anEntity containedEntitySelectors) size do: [ :index |
-			(anEntity perform: (selectors at: index)) ifNotNil: [ :children |
-					| coll |
-					1 to: (coll := OrderedCollection withAll: children) size do: [ :i | self queryFor: (coll at: i) ] ] ]
+	shouldCollectChildrenDependencies ifFalse: [ ^ self ].
+	anEntity containedEntitiesDo: [ :child | self queryFor: child ]
 ]
 
 { #category : 'execution' }
