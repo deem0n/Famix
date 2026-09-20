@@ -65,22 +65,23 @@ MooseGroupNameCloud >> buildLegend [
 { #category : 'keywords' }
 MooseGroupNameCloud >> entityAndItsKeywords: anEntity [
 	| keywords |
-	keywords := (anEntity name substrings: self class separators)
+	keywords := ((anEntity name ifNil: [ '' ]) substrings: self class separators)
 		flatCollect: [ :substring | 
 			substring piecesCutWhereCamelCase
-				collect: [ :y | MalStemmer English stem: y ] ].
-	^ keywords
-		reject: [ :keyword | self class stopWordList includes: keyword ]
+				collect: [ :y | y asLowercase ] ].
+	^ keywords asSet
+		reject: [ :keyword | keyword isEmpty or: [ self class stopWordList includes: keyword ] ]
 		thenCollect: [ :keyword | keyword -> anEntity ]
 ]
 
 { #category : 'keywords' }
 MooseGroupNameCloud >> keywordsInGroupEntitiesNames [
-	^ ((mooseGroup
-		flatCollect: [ :entity | self entityAndItsKeywords: entity ])
-		groupedBy: #key
-		affect: [ :association | association collect: #value ]) associations
-		sortDescending: [ :keyWordAndEntities | keyWordAndEntities value size ]
+	| grouped |
+	grouped := Dictionary new.
+	mooseGroup do: [ :entity |
+		(self entityAndItsKeywords: entity) do: [ :association |
+			(grouped at: association key ifAbsentPut: [ OrderedCollection new ]) add: association value ] ].
+	^ grouped associations sorted: [ :a :b | a value size > b value size ]
 ]
 
 { #category : 'accessing' }
@@ -95,6 +96,7 @@ MooseGroupNameCloud >> mooseInterestingEntityForNode: node [
 
 { #category : 'building' }
 MooseGroupNameCloud >> normalizeLabels [
+	canvas nodes ifEmpty: [ ^ self ].
 	RSNormalizer fontSize
 		shapes: canvas nodes;
 		normalize: [ :each | each value size ]
@@ -106,4 +108,15 @@ MooseGroupNameCloud >> setLayout [
 		alignMiddle;
 		gapSize: 20;
 		on: canvas nodes
+]
+
+{ #category : 'keywords' }
+MooseGroupNameCloud class >> separators [
+	^ ' _-.:/' , String tab , String cr , String lf
+]
+
+{ #category : 'keywords' }
+MooseGroupNameCloud class >> stopWordList [
+	"Keep the default vocabulary independent of optional NLP packages."
+	^ #('a' 'an' 'and' 'or' 'the' 'of' 'to' 'in' 'on' 'for' 'with')
 ]
